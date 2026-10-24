@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мой Трекер Задач</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f9; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
+        .auth-box, .task-box { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+        input, textarea, button { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        button { background-color: #007bff; color: white; cursor: pointer; border: none; }
+        button:hover { background-color: #0056b3; }
+        .task-item { background: #f9f9f9; padding: 10px; border-left: 4px solid #007bff; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .task-item.done { border-left-color: #28a745; text-decoration: line-through; color: #888; }
+        .hidden { display: none; }
+        .error { color: red; font-size: 14px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📝 Мой Трекер</h1>
+
+    <!-- Блок авторизации -->
+    <div id="auth-section">
+        <div class="auth-box">
+            <input type="email" id="email" placeholder="Email (test@test.com)">
+            <input type="password" id="password" placeholder="Пароль (password123)">
+            <button onclick="login()">Войти</button>
+            <button onclick="register()" style="background-color: #6c757d;">Зарегистрироваться</button>
+            <p id="auth-error" class="error"></p>
+        </div>
+    </div>
+
+    <!-- Блок с задачами (скрыт до входа) -->
+    <div id="task-section" class="hidden">
+        <div class="task-box">
+            <input type="text" id="task-title" placeholder="Название задачи">
+            <input type="text" id="task-desc" placeholder="Описание (необязательно)">
+            <button onclick="createTask()">Добавить задачу</button>
+            <button onclick="logout()" style="background-color: #dc3545;">Выйти</button>
+        </div>
+        <div id="tasks-list"></div>
+    </div>
+</div>
+
+<script>
+    const API_URL = 'http://localhost:3000/api';
+    let token = localStorage.getItem('token');
+
+    // Инициализация при загрузке
+    if (token) {
+        showTasks();
+    }
+
+    async function login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        try {
+            const res = await fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                token = data.token;
+                localStorage.setItem('token', token);
+                showTasks();
+            } else {
+                document.getElementById('auth-error').innerText = data.error;
+            }
+        } catch (e) {
+            document.getElementById('auth-error').innerText = 'Ошибка сервера';
+        }
+    }
+
+    async function register() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        try {
+            const res = await fetch(`${API_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, name: 'User' })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('Регистрация успешна! Теперь войдите.');
+            } else {
+                document.getElementById('auth-error').innerText = data.error;
+            }
+        } catch (e) {
+            document.getElementById('auth-error').innerText = 'Ошибка сервера';
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('token');
+        token = null;
+        document.getElementById('auth-section').classList.remove('hidden');
+        document.getElementById('task-section').classList.add('hidden');
+        document.getElementById('tasks-list').innerHTML = '';
+    }
+
+    function showTasks() {
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('task-section').classList.remove('hidden');
+        loadTasks();
+    }
+
+    async function loadTasks() {
+        try {
+            const res = await fetch(`${API_URL}/tasks`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) return logout();
+            const tasks = await res.json();
+            
+            const list = document.getElementById('tasks-list');
+            list.innerHTML = '';
+            tasks.forEach(task => {
+                const div = document.createElement('div');
+                div.className = `task-item ${task.status === 'DONE' ? 'done' : ''}`;
+                div.innerHTML = `
+                    <div>
+                        <strong>${task.title}</strong><br>
+                        <small>${task.description || ''}</small>
+                    </div>
+                    <div>
+                        <button onclick="toggleTask('${task.id}', '${task.status}')" style="padding:5px; font-size:12px;">${task.status === 'TODO' ? '✅' : '↩️'}</button>
+                        <button onclick="deleteTask('${task.id}')" style="background-color: #dc3545; padding:5px; font-size:12px;">❌</button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function createTask() {
+        const title = document.getElementById('task-title').value;
+        const description = document.getElementById('task-desc').value;
+        if (!title) return alert('Введите название задачи');
+
+        try {
+            await fetch(`${API_URL}/tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ title, description })
+            });
+            document.getElementById('task-title').value = '';
+            document.getElementById('task-desc').value = '';
+            loadTasks();
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function toggleTask(id, currentStatus) {
+        const newStatus = currentStatus === 'TODO' ? 'DONE' : 'TODO';
+        await fetch(`${API_URL}/tasks/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ status: newStatus })
+        });
+        loadTasks();
+    }
+
+    async function deleteTask(id) {
+        await fetch(`${API_URL}/tasks/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadTasks();
+    }
+</script>
+</body>
+</html>
